@@ -1,0 +1,6 @@
+# Rubric routes
+PUT           /rubrics            @controllers.RubricController.create
+GET           /rubrics            @controllers.RubricController.list
+GET           /rubrics/:id        @controllers.RubricController.retrieve(id: String)
+POST          /rubrics/:id        @controllers.RubricController.update(id: String)
+DELETE        /rubrics/:id        @controllers.RubricController.delete(id: String)
