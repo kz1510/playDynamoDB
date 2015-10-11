@@ -9,7 +9,7 @@ object Converters {
     Item.fromJSON(Json.stringify(jsonObject))
   }
 
-  def modelToItem[Model:Writes](m: Model): Item = {
+  def modelToItem[Model: Writes](m: Model): Item = {
     val jsonString = Json.stringify(Json.toJson(m))
     Item.fromJSON(jsonString)
   }

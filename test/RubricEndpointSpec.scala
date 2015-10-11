@@ -1,8 +1,12 @@
 import core.DynamoDBModule
 import models.Rubric
+import org.joda.time.DateTime
 import play.api.libs.json.{JsObject, Json}
 import play.api.test._
 import play.api.{Logger, Play}
+
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Future}
 
 class RubricEndpointSpec extends PlaySpecification {
   // Set sequential execution
@@ -35,7 +39,7 @@ class RubricEndpointSpec extends PlaySpecification {
     "start with an empty table" in {
       // List empty table
       val Some(listResult) = route(FakeRequest(controller.list()))
-      contentAsJson(listResult).as[Set[Rubric]].size === 0
+      contentAsJson(listResult).as[Set[Rubric]].size ==== 0
     }
 
     "create a rubric" in {
@@ -43,69 +47,70 @@ class RubricEndpointSpec extends PlaySpecification {
       val json1 = createDummyRubricJson("1", Vector.empty)
       val Some(createResult) = route(FakeRequest(controller.create).withJsonBody(json1))
       val savedRubric = contentAsJson(createResult).validate[Rubric].get
-      savedRubric.copy(id = None) === Json.fromJson[Rubric](json1).get
+      savedRubric.copy(id = None) ==== Json.fromJson[Rubric](json1).get
 
       // Create second rubric
       val json2 = createDummyRubricJson("1", Vector("2", "2"))
       val Some(createResult2) = route(FakeRequest(controller.create).withJsonBody(json2))
       val savedRubric2 = contentAsJson(createResult2).as[Rubric]
       savedRubric2.id should beSome[String]
-      savedRubric2.indicators === Some(Vector("2", "2"))
+      savedRubric2.indicators ==== Some(Vector("2", "2"))
     }
 
     "handle create failures" in {
       val Some(createResult) = route(FakeRequest(controller.create)
         .withJsonBody(createDummyRubricJson("createFailure", Vector("aa", "bb")) ++ Json.obj("id" -> "dangerousId")))
-      status(createResult) === BAD_REQUEST
+      status(createResult) ==== BAD_REQUEST
       contentAsString(createResult) must contain("Rubric cannot contain id in Create")
 
       val Some(createResult2) = route(FakeRequest(controller.create)
         .withJsonBody(createDummyRubricJson("createFailure", Vector("aa", "bb")) - "name"))
-      status(createResult2) === BAD_REQUEST
+      status(createResult2) ==== BAD_REQUEST
       contentAsString(createResult2) must contain("Invalid rubric json")
     }
 
     "update a rubric" in {
       val json = createDummyRubricJson("updateTest", Vector("aa", "bb", "cc"))
       val Some(createResult) = route(FakeRequest(controller.create()).withJsonBody(json))
-      status(createResult) === OK
+      status(createResult) ==== OK
       val savedRubric = contentAsJson(createResult).as[Rubric]
 
       // Update rubric
       val updatedRubric = savedRubric.copy(publisher = "updatedPublisher", indicators = Some(Vector("Updated")))
       val Some(updateResult) = route(FakeRequest(controller.update(updatedRubric.id.get))
         .withJsonBody(Json.toJson(updatedRubric)))
-      contentAsJson(updateResult).as[Rubric] === updatedRubric
+      contentAsJson(updateResult).as[Rubric] ==== updatedRubric
     }
 
     "handle update failures" in {
       val Some(createResult) = route(FakeRequest(controller.create)
         .withJsonBody(createDummyRubricJson("updateFailure", Vector("aa", "bb"))))
-      status(createResult) === OK
+      status(createResult) ==== OK
       val savedRubric = contentAsJson(createResult).as[Rubric]
 
       val Some(updateResult) = route(FakeRequest(controller.update(savedRubric.id.get))
         .withJsonBody(Json.toJson(savedRubric.copy(id = Some("otherId")))))
-      status(updateResult) === BAD_REQUEST
+      status(updateResult) ==== BAD_REQUEST
       contentAsString(updateResult) must contain("Rubric id is different than url id")
 
       {
         val Some(updateResult) = route(FakeRequest(controller.update(savedRubric.id.get + "1"))
           .withJsonBody(Json.toJson(savedRubric.copy(id = Some(savedRubric.id.get + "1")))))
-        status(updateResult) === BAD_REQUEST
+        status(updateResult) ==== BAD_REQUEST
         contentAsString(updateResult) must contain("Existing item not found while updating")
       }
 
       {
         val Some(updateResult) = route(FakeRequest(controller.update(savedRubric.id.get + "1"))
           .withJsonBody(Json.toJson(savedRubric.copy(id = Some(savedRubric.id.get + "1"))).asInstanceOf[JsObject] - "name"))
-        status(updateResult) === BAD_REQUEST
+        status(updateResult) ==== BAD_REQUEST
         contentAsString(updateResult) must contain("Invalid rubric json")
       }
 
       {
-        val Some(updateResult) = route(FakeRequest(controller.update(savedRubric.id.get)).withJsonBody(Json.toJson(savedRubric.copy(id = None))))
-        status(updateResult) === BAD_REQUEST
+        val Some(updateResult) = route(FakeRequest(controller.update(savedRubric.id.get))
+          .withJsonBody(Json.toJson(savedRubric.copy(id = None))))
+        status(updateResult) ==== BAD_REQUEST
         contentAsString(updateResult) must contain("Rubric should contain id in Update")
       }
     }
@@ -113,16 +118,16 @@ class RubricEndpointSpec extends PlaySpecification {
     "retrieve a rubric and handle failure" in {
       val json = createDummyRubricJson("retrieveTest", Vector("aa", "bb", "cc"))
       val Some(createResult) = route(FakeRequest(controller.create()).withJsonBody(json))
-      status(createResult) === OK
+      status(createResult) ==== OK
       val savedRubric = contentAsJson(createResult).as[Rubric]
 
       val Some(retrieveResult) = route(FakeRequest(controller.retrieve(savedRubric.id.get)))
-      status(retrieveResult) === OK
-      contentAsJson(retrieveResult).as[Rubric] === savedRubric
+      status(retrieveResult) ==== OK
+      contentAsJson(retrieveResult).as[Rubric] ==== savedRubric
 
       {
         val Some(retrieveResult) = route(FakeRequest(controller.retrieve("testtesttest")))
-        status(retrieveResult) === NOT_FOUND
+        status(retrieveResult) ==== NOT_FOUND
       }
 
     }
@@ -130,29 +135,43 @@ class RubricEndpointSpec extends PlaySpecification {
     "list rubrics" in {
       val json = createDummyRubricJson("listTest", Vector("aa", "bb", "cc"))
       val Some(createResult) = route(FakeRequest(controller.create()).withJsonBody(json))
-      status(createResult) === OK
+      status(createResult) ==== OK
       val savedRubric = contentAsJson(createResult).as[Rubric]
 
       val Some(listResult) = route(FakeRequest(controller.list()))
       contentAsJson(listResult).as[List[Rubric]] must contain(savedRubric)
     }
 
-    "delete rubric and handle failures" in {
+    "delete rubric" in {
       val json = createDummyRubricJson("retrieveTest", Vector("aa", "bb", "cc"))
       val Some(createResult) = route(FakeRequest(controller.create()).withJsonBody(json))
-      status(createResult) === OK
+      status(createResult) ==== OK
       val savedRubric = contentAsJson(createResult).as[Rubric]
 
       // Delete first rubric
       val Some(deleteResult) = route(FakeRequest(controller.delete(savedRubric.id.get)))
-      status(deleteResult) === OK
+      status(deleteResult) ==== OK
       val Some(retrieveResult) = route(FakeRequest(controller.retrieve(savedRubric.id.get)))
-      status(retrieveResult) === NOT_FOUND
+      status(retrieveResult) ==== NOT_FOUND
 
       {
         val Some(deleteResult) = route(FakeRequest(controller.delete("dangerousId")))
-        status(deleteResult) === OK
+        status(deleteResult) ==== OK
       }
+    }
+
+    "test load" in {
+      val json = createDummyRubricJson("performanceTest", Vector("aa", "bb", "cc"))
+      implicit val ec = app.actorSystem.dispatcher
+      val n = 500
+      val createResult = Future.sequence(
+        (0 to n).map(i => route(FakeRequest(controller.create()).withJsonBody(json)).get)
+      )
+      Logger.info(DateTime.now().toString)
+      Await.result(createResult, Duration.Inf)
+      Logger.info(DateTime.now().toString)
+      val Some(listResult) = route(FakeRequest(controller.list()))
+      contentAsJson(listResult).as[Vector[Rubric]].size must be greaterThan(n)
     }
   }
 

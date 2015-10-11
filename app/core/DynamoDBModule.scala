@@ -19,7 +19,7 @@ class DynamoDBModule @Inject() (app: Application, applicationLifecycle: Applicat
 
   applicationLifecycle.addStopHook { () =>
     Logger.info("Shutting down dynamoDB client")
-    Future.successful(dynamoDB.shutdown())
+    Future.successful(this.shutdown())
   }
 
   private val client: AmazonDynamoDBClient = {
@@ -53,7 +53,7 @@ class DynamoDBModule @Inject() (app: Application, applicationLifecycle: Applicat
         new KeySchemaElement("id", KeyType.HASH)),
       List(
         new AttributeDefinition("id", ScalarAttributeType.S)),
-      new ProvisionedThroughput(10L, 10L) // interesting, but beyond the scope of this exercise (getting started)
+      new ProvisionedThroughput(10000L, 10000L) // interesting, but beyond the scope of this exercise (getting started)
     )
     table
   }
